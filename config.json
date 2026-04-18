@@ -1,0 +1,34 @@
+{
+  "log_level": "info",
+
+  "dry_run": false,
+
+  "temp_paths": [
+    "%TEMP%",
+    "C:\\Windows\\Temp"
+  ],
+
+  "cleanup": {
+    "empty_recycle_bin": true,
+    "clean_temp_files": true
+  },
+
+  "updates": {
+    "update_all_apps": true,
+    "excluded_apps": ["Microsoft.Edge", "Microsoft.Office", "PythonSoftwareFoundation.Python.3.9", "Git.Git"],
+    "include_unknown": true,
+    "auto_accept_agreements": true
+  },
+
+  "drivers": {
+    "update_drivers": false,
+    "use_windows_update": true,
+    "auto_reboot": false
+  },
+
+  "execution": {
+    "continue_on_error": true,
+    "generate_json_output": true,
+    "save_logs": true
+  }
+}
