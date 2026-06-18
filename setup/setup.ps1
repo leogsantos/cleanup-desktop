@@ -2,175 +2,185 @@
 # PC-TOOLS SETUP SCRIPT
 # ================================
 
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 Write-Host "=== Iniciando setup do PC Tools ==="
 
 function Test-IsAdmin {
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Ensure-RunAsAdmin {
+function Invoke-AdminElevation {
     if (-not (Test-IsAdmin)) {
-        Write-Host "Reiniciando o script como administrador..."
-        $powershellPath = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        Write-Host "Reiniciando como administrador..."
+        $psExePath  = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $scriptPath = $PSCommandPath
-        if (-not $scriptPath) {
-            $scriptPath = $MyInvocation.MyCommand.Path
-        }
-        if (-not $scriptPath) {
-            throw "Não foi possível determinar o caminho do script para reiniciar como administrador."
-        }
-
-        $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scriptPath)
-        Start-Process -FilePath $powershellPath -ArgumentList $arguments -Verb RunAs -Wait
+        if (-not $scriptPath) { $scriptPath = $MyInvocation.MyCommand.Path }
+        if (-not $scriptPath) { throw "Nao foi possivel determinar o caminho do script." }
+        Start-Process -FilePath $psExePath -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$scriptPath) -Verb RunAs -Wait
         exit
     }
 }
 
-Ensure-RunAsAdmin
-
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$installDir = "$env:LOCALAPPDATA\PCTools"
-$exePath = "$installDir\pc-tools.exe"
-
-# ================================
-# Criar pasta de instalação
-# ================================
-if (!(Test-Path $installDir)) {
-    New-Item -ItemType Directory -Path $installDir | Out-Null
-    Write-Host "Pasta criada: $installDir"
-}
-
-# ================================
-# Copiar arquivos
-# ================================
-Write-Host "Copiando arquivos..."
-
-Copy-Item "$root\..\src\pc-tools.ps1" $installDir -Force
-Copy-Item "$root\..\config.json" $installDir -Force
-Copy-Item "$root\..\src\scripts" $installDir -Recurse -Force
-
-# ================================
-# Criar pasta de logs
-# ================================
-$logDir = "$installDir\logs"
-if (!(Test-Path $logDir)) {
-    New-Item -ItemType Directory -Path $logDir | Out-Null
-}
-
-# ================================
-# Validar winget
-# ================================
-Write-Host "Validando winget..."
-
-if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
-    Write-Warning "Winget não encontrado. Instale pela Microsoft Store (App Installer)."
-}
-else {
-    Write-Host "Winget OK"
-}
-
-# ================================
-# Instalar PS2EXE (se necessário)
-# ================================
-if (-not (Get-Module -ListAvailable -Name ps2exe)) {
-    Write-Host "Instalando PS2EXE..."
-    Install-Module ps2exe -Scope CurrentUser -Force
-}
-
-Import-Module ps2exe
-
-# ================================
-# Gerar EXE
-# ================================
-Write-Host "Gerando executável..."
-
-Invoke-PS2EXE `
-    -InputFile "$installDir\pc-tools.ps1" `
-    -OutputFile "$exePath" `
-    -NoConsole `
-    -RequireAdmin
-
-Write-Host "EXE criado em: $exePath"
-
-# ================================
-# Instalar módulo de driver (opcional)
-# ================================
-Write-Host "Configurando suporte a drivers..."
-
-if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
-    try {
-        Install-Module PSWindowsUpdate -Scope CurrentUser -Force -ErrorAction Stop
-        Write-Host "PSWindowsUpdate instalado"
-    }
-    catch {
-        Write-Warning "Falha ao instalar PSWindowsUpdate"
-    }
-}
-
-# ================================
-# Criar tarefa agendada
-# ================================
-Write-Host "Criando tarefa agendada..."
-
-$taskFolder = "\cleanup-dektop\"
-$taskName = "PC Tools Maintenance"
-
-# Remove se já existir na pasta de tarefas específica
-try {
-    $existingTask = Get-ScheduledTask -TaskPath $taskFolder -TaskName $taskName -ErrorAction Stop
-    if ($existingTask) {
-        Unregister-ScheduledTask -TaskPath $taskFolder -TaskName $taskName -Confirm:$false
-    }
-}
-catch [System.Management.Automation.ItemNotFoundException] {
-    # Ignorar se a pasta ou a tarefa não existirem
-}
-catch {
-    Write-Warning "Falha ao verificar tarefa agendada: $_"
-}
-
-$action = New-ScheduledTaskAction -Execute $exePath -Argument "run-all"
-
-$trigger = New-ScheduledTaskTrigger `
-    -Weekly `
-    -DaysOfWeek Saturday `
-    -WeeksInterval 1 `
-    -At 10am
-
-$settings = New-ScheduledTaskSettingsSet `
-    -StartWhenAvailable `
-    -RestartCount 3 `
-    -RestartInterval (New-TimeSpan -Minutes 5)
-
-$principal = New-ScheduledTaskPrincipal `
-    -UserId "$env:USERDOMAIN\$env:USERNAME" `
-    -LogonType Interactive `
-    -RunLevel Highest
+Invoke-AdminElevation
 
 try {
-    Register-ScheduledTask `
-        -TaskName $taskName `
-        -TaskPath $taskFolder `
-        -Action $action `
-        -Trigger $trigger `
-        -Settings $settings `
-        -Principal $principal `
-        -Description "Automated system maintenance (cleanup, updates, drivers)"
 
-    Write-Host "Tarefa criada com sucesso (rodando como admin sem UAC)"
+    $setupDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $repoRoot   = Split-Path -Parent $setupDir
+    $mainScript = Join-Path $repoRoot "src\pc-tools.ps1"
+    $psExe      = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+
+    if (-not (Test-Path $mainScript)) {
+        throw "Script principal nao encontrado em: $mainScript"
+    }
+
+    Write-Host "Scripts em: $repoRoot"
+
+    # ================================
+    # Validar winget
+    # ================================
+    Write-Host "Validando winget..."
+    if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Warning "Winget nao encontrado. Instale pela Microsoft Store (App Installer)."
+    } else {
+        Write-Host "Winget OK"
+    }
+
+    # ================================
+    # Instalar PSWindowsUpdate (opcional)
+    # ================================
+    Write-Host "Configurando suporte a drivers..."
+    if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
+        try {
+            Install-Module PSWindowsUpdate -Scope CurrentUser -Force -ErrorAction Stop
+            Write-Host "PSWindowsUpdate instalado"
+        }
+        catch {
+            Write-Warning "Falha ao instalar PSWindowsUpdate: $($_.Exception.Message)"
+        }
+    }
+
+    # ================================
+    # Criar tarefas agendadas
+    # ================================
+    Write-Host "Criando tarefas agendadas..."
+
+    $taskMaintenance = "PC Tools Maintenance"
+    $taskRepair      = "PC Tools System Repair"
+
+    # Limpar versoes anteriores (root e subpastas legadas)
+    foreach ($tn in @($taskMaintenance, $taskRepair,
+                      "\cleanup-desktop\$taskMaintenance", "\cleanup-desktop\$taskRepair",
+                      "\cleanup-dektop\$taskMaintenance",  "\cleanup-dektop\$taskRepair")) {
+        schtasks /Delete /TN $tn /F 2>$null | Out-Null
+    }
+
+    $userSid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+
+    function New-PcTask {
+        param(
+            [string]$TaskName,
+            [string]$ArgCommand,
+            [string]$DayElement,
+            [int]$WeeksInterval,
+            [string]$StartBoundary
+        )
+
+        $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>PC Tools scheduled task</Description>
+  </RegistrationInfo>
+  <Principals>
+    <Principal id="Author">
+      <UserId>$userSid</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <RestartOnFailure>
+      <Count>3</Count>
+      <Interval>PT5M</Interval>
+    </RestartOnFailure>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>true</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+  </Settings>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>$StartBoundary</StartBoundary>
+      <ScheduleByWeek>
+        <WeeksInterval>$WeeksInterval</WeeksInterval>
+        <DaysOfWeek>
+          $DayElement
+        </DaysOfWeek>
+      </ScheduleByWeek>
+    </CalendarTrigger>
+  </Triggers>
+  <Actions Context="Author">
+    <Exec>
+      <Command>$psExe</Command>
+      <Arguments>-NoProfile -ExecutionPolicy Bypass -File "$mainScript" $ArgCommand</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"@
+        $tmpXml = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.xml'
+        try {
+            $xml | Out-File -FilePath $tmpXml -Encoding Unicode
+            $out = schtasks /Create /XML $tmpXml /TN $TaskName /F 2>&1
+            if ($LASTEXITCODE -ne 0) { throw ($out | Out-String) }
+        }
+        finally {
+            Remove-Item $tmpXml -ErrorAction SilentlyContinue
+        }
+    }
+
+    New-PcTask -TaskName $taskMaintenance -ArgCommand "run-all" `
+               -DayElement "<Saturday />" -WeeksInterval 1 -StartBoundary "2025-01-04T10:00:00"
+    Write-Host "Tarefa criada: $taskMaintenance (semanal, sabados 10h)"
+
+    New-PcTask -TaskName $taskRepair -ArgCommand "repair-system" `
+               -DayElement "<Sunday />" -WeeksInterval 2 -StartBoundary "2025-01-05T02:00:00"
+    Write-Host "Tarefa criada: $taskRepair (quinzenal, domingos 02h)"
+
+    # ================================
+    # Criar pasta de logs
+    # ================================
+    $logDir = Join-Path $repoRoot "logs"
+    if (!(Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir | Out-Null
+    }
+
+    # ================================
+    # Finalizacao
+    # ================================
+    Write-Host ""
+    Write-Host "=== Setup concluido com sucesso ===" -ForegroundColor Green
+    Write-Host "Scripts em : $repoRoot"
+    Write-Host "Tarefas    : $taskMaintenance (sab 10h) | $taskRepair (dom 02h, quinzenal)"
+    Write-Host ""
+    Write-Host "Rodar manualmente:"
+    Write-Host "  powershell -ExecutionPolicy Bypass -File `"$mainScript`" run-all"
+    Write-Host ""
+
 }
 catch {
-    Write-Error "Falha ao criar a tarefa agendada: $_"
-    exit 1
+    Write-Host ""
+    Write-Host "ERRO: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host ""
 }
-
-# ================================
-# Finalização
-# ================================
-Write-Host ""
-Write-Host "=== Setup concluído com sucesso ==="
-Write-Host "Local instalado: $installDir"
-Write-Host "Tarefa: $taskName"
-Write-Host ""
+finally {
+    Read-Host "Pressione Enter para fechar"
+}
