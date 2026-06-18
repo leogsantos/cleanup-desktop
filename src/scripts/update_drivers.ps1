@@ -5,7 +5,9 @@ param(
 
 function Write-Log {
     param($msg)
-    "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) - $msg" | Out-File -Append $LogFile
+    $line = "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) - $msg"
+    $line | Out-File -Append $LogFile
+    Write-Host $line
 }
 
 if (-not $Config.drivers.update_drivers) {

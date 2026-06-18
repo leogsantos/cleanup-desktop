@@ -5,27 +5,24 @@ param(
 
 function Write-Log {
     param($msg)
-    "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) - $msg" | Out-File -Append $LogFile
+    $line = "$((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) - $msg"
+    $line | Out-File -Append $LogFile
+    Write-Host $line
 }
 
 if ($Config.dry_run) {
-    Write-Log "[DRY RUN] Limpeza de temporários ignorada"
+    Write-Log "[DRY RUN] Limpeza de temporarios ignorada"
     return
 }
 
 $totalDeleted = 0
 
 foreach ($path in $Config.temp_paths) {
-
     $resolved = [Environment]::ExpandEnvironmentVariables($path)
-
     if (Test-Path $resolved) {
-
         Write-Log "Limpando: $resolved"
-
         try {
             $files = Get-ChildItem $resolved -Recurse -Force -ErrorAction SilentlyContinue
-
             foreach ($file in $files) {
                 try {
                     Remove-Item $file.FullName -Recurse -Force -ErrorAction Stop
@@ -35,21 +32,19 @@ foreach ($path in $Config.temp_paths) {
                     if (-not $Config.execution.continue_on_error) { throw }
                 }
             }
-
         }
         catch {
-            Write-Log "Erro em $resolved"
+            Write-Log "Erro em $($resolved): $($_.Exception.Message)"
         }
     }
 }
 
-$result = [PSCustomObject]@{
-    Action = "Clean Temp"
-    FilesRemoved = $totalDeleted
-    Status = "Completed"
-    Timestamp = Get-Date
-}
+Write-Log "Temporarios removidos: $totalDeleted arquivo(s)"
 
-if ($Config.execution.generate_json_output) {
-    $result | ConvertTo-Json
+try {
+    Clear-DnsClientCache
+    Write-Log "Cache DNS limpo"
+}
+catch {
+    Write-Log "Aviso: nao foi possivel limpar o cache DNS: $($_.Exception.Message)"
 }
