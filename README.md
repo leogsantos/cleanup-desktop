@@ -1,33 +1,24 @@
 # PC Tools
 
-Automação de manutenção para Windows: limpeza de arquivos temporários, esvaziamento de lixeira, atualização de apps e gerenciamento de drivers.
+Automação de manutenção para Windows: limpeza de temporários, esvaziamento de lixeira, atualização de apps, drivers e reparação do sistema operacional.
 
-## O que é
+## O que faz
 
-Este projeto fornece um conjunto de scripts PowerShell para executar rotinas de manutenção de PC de forma automática e configurável. Ele foi pensado para ser instalado localmente e rodar como uma tarefa agendada semanalmente em Windows.
+| Rotina | Quando roda | Comando |
+|---|---|---|
+| Limpeza de temporários + lixeira + flush DNS | Semanal (sáb 10h) | `run-all` |
+| Atualização de apps via `winget` | Semanal (sáb 10h) | `run-all` |
+| Atualização de drivers via `PSWindowsUpdate` | Semanal (sáb 10h) | `run-all` |
+| DISM RestoreHealth + SFC scannow | Quinzenal (dom 02h) | `repair-system` |
+| chkdsk (agendado p/ próximo boot) | Opcional via config | `repair-system` |
 
-## Funcionalidades
-
-### Core
-- Limpeza de arquivos temporários definidos em `config.json`
-- Esvaziamento da Lixeira
-- Atualização de aplicativos via `winget`
-- Atualização de drivers via `PSWindowsUpdate`
-- Execução de rotina completa com um único comando
-
-### Automação / Processamento
-- Empacotamento do script principal em `pc-tools.exe` via `ps2exe`
-- Criação de tarefa agendada no Windows Task Scheduler
-- Logs de execução gerados automaticamente em `logs/`
-- Instalação e desinstalação com elevação administrativa
-
-## Como Usar
+## Como instalar
 
 ### Pré-requisitos
 
 - Windows 10/11
-- PowerShell com permissão para executar scripts
-- `winget` disponível no sistema (para atualizações de apps)
+- PowerShell (já vem no Windows)
+- `winget` instalado (App Installer da Microsoft Store)
 
 ### Instalação
 
@@ -38,129 +29,126 @@ git clone https://github.com/leogsantos/cleanup-desktop.git
 cd cleanup-desktop
 ```
 
-2. Execute o instalador com permissão de administrador:
+2. Execute o instalador:
 
 ```powershell
-.\\setup\\setup.ps1
+.\setup\setup.ps1
 ```
 
-### Execução
+O script pede elevação de administrador automaticamente. Ele vai:
+- Copiar os arquivos para `%LOCALAPPDATA%\PCTools\`
+- Criar as duas tarefas no Agendador de Tarefas do Windows
+- Instalar o módulo `PSWindowsUpdate` (para drivers)
 
-Após a instalação, o executável gerado fica em `%LOCALAPPDATA%\\PCTools\\pc-tools.exe`.
+### O que é criado no Agendador de Tarefas
 
-Para rodar a rotina completa manualmente:
+| Tarefa | Frequência | Horário | Ação |
+|---|---|---|---|
+| PC Tools Maintenance | Semanal | Sábado 10:00 | `run-all` |
+| PC Tools System Repair | Quinzenal | Domingo 02:00 | `repair-system` |
+
+Ambas ficam na pasta `\cleanup-desktop\` do Agendador de Tarefas.
+
+## Como rodar manualmente
+
+Abra o PowerShell como administrador e execute:
 
 ```powershell
-%LOCALAPPDATA%\\PCTools\\pc-tools.exe run-all
+# Rotina completa (limpeza + updates)
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\PCTools\pc-tools.ps1" run-all
+
+# Só reparação do sistema (DISM + SFC)
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\PCTools\pc-tools.ps1" repair-system
+
+# Comandos individuais
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\PCTools\pc-tools.ps1" clean-temp
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\PCTools\pc-tools.ps1" empty-trash
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\PCTools\pc-tools.ps1" update-apps
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\PCTools\pc-tools.ps1" update-drivers
 ```
 
-Para executar diretamente pelo script fonte:
+Ou, se quiser rodar direto do repositório sem instalar:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\\src\\pc-tools.ps1 -Command run-all
+powershell -ExecutionPolicy Bypass -File .\src\pc-tools.ps1 run-all
 ```
 
-### Desinstalação
+## Como desinstalar
 
 ```powershell
-.\\setup\\uninstall.ps1
+.\setup\uninstall.ps1
 ```
 
-## Estrutura do Projeto
+Remove os arquivos de `%LOCALAPPDATA%\PCTools\` e as duas tarefas do Agendador.
 
-- `config.json` — arquivo de configuração principal
-- `src/pc-tools.ps1` — script principal que orquestra as rotinas
-- `src/scripts/clean_temp.ps1` — limpeza de arquivos temporários
-- `src/scripts/empty_trash.ps1` — esvaziamento de lixeira
-- `src/scripts/update_apps.ps1` — atualização de apps via winget
-- `src/scripts/update_drivers.ps1` — atualização de drivers via PSWindowsUpdate
-- `setup/setup.ps1` — instalador e criação de tarefa agendada
-- `setup/uninstall.ps1` — desinstalador e remoção da tarefa agendada
-- `.github/workflows/` — pipelines de build e testes
-- `logs/` — local onde os logs de execução são gravados
+## Estrutura do projeto
 
-## Fluxo Técnico
+```
+cleanup-desktop/
+├── config.json              # Configuração de todas as rotinas
+├── setup/
+│   ├── setup.ps1            # Instalador (copia arquivos + cria tarefas)
+│   └── uninstall.ps1        # Desinstalador
+└── src/
+    ├── pc-tools.ps1         # Orquestrador principal
+    └── scripts/
+        ├── clean_temp.ps1   # Limpeza de temp + flush DNS
+        ├── empty_trash.ps1  # Esvaziamento de lixeira
+        ├── update_apps.ps1  # Atualização de apps via winget
+        ├── update_drivers.ps1  # Atualização de drivers via PSWindowsUpdate
+        └── repair_system.ps1   # DISM + SFC + chkdsk (quinzenal)
+```
 
-1. Usuário executa `setup\setup.ps1` como administrador.
-2. O script copia os arquivos para `%LOCALAPPDATA%\\PCTools`, gera o executável e cria a tarefa agendada.
-3. A tarefa agendada roda semanalmente e executa `pc-tools.exe run-all`.
-4. O comando lê `config.json` e dispara as rotinas de limpeza, lixo, apps e drivers.
-5. O resultado de cada execução é gravado em um arquivo de log dentro de `logs/`.
+Os logs de cada execução ficam em `%LOCALAPPDATA%\PCTools\logs\` com o formato `execution_yyyyMMdd_HHmmss.log`. Logs com mais de 30 dias são removidos automaticamente.
 
-## Detalhes Técnicos
+## Configuração (config.json)
 
-- `config.json` controla quais rotinas devem rodar e define comportamentos de execução
-- `setup/setup.ps1` garante elevação administrativa antes de instalar e criar a tarefa agendada
-- `ps2exe` é usado para gerar `pc-tools.exe` com `RequireAdmin` e sem console
-- `winget` é validado durante a instalação, mas a rotina de apps indica caso não esteja disponível
-- `PSWindowsUpdate` é instalado se necessário para permitir a atualização de drivers
+```jsonc
+{
+  "dry_run": false,          // true = simula sem alterar nada
 
-## Configuração do config.json
+  "temp_paths": ["%TEMP%", "C:\\Windows\\Temp"],  // pastas a limpar
 
-O arquivo `config.json` define o comportamento da manutenção e permite ativar/desativar cada rotina.
+  "cleanup": {
+    "empty_recycle_bin": true,
+    "clean_temp_files": true
+  },
 
-- `log_level`:
-  - `info`, `debug`, `warning`, etc. (controle de nível de logs)
-- `dry_run`:
-  - `true` — executa em modo de simulação sem alterar o sistema
-  - `false` — executa normalmente
-- `temp_paths`:
-  - lista de caminhos que serão limpos pelo `clean_temp.ps1`
-  - aceita variáveis de ambiente como `%TEMP%`
-- `cleanup.empty_recycle_bin`:
-  - `true` — esvazia a Lixeira
-  - `false` — pula essa rotina
-- `cleanup.clean_temp_files`:
-  - `true` — limpa arquivos temporários
-  - `false` — pula essa rotina
-- `updates.update_all_apps`:
-  - `true` — tenta atualizar aplicativos com `winget`
-  - `false` — ignora a rotina de apps
-- `updates.excluded_apps`:
-  - lista de identificadores de apps a ignorar durante a atualização
-- `updates.include_unknown`:
-  - `true` — inclui apps desconhecidos no processo de verificação/atualização
-- `updates.auto_accept_agreements`:
-  - `true` — aceita automaticamente prompts de licença durante atualização de apps
-- `drivers.update_drivers`:
-  - `true` — ativa atualização de drivers
-  - `false` — desliga essa rotina
-- `drivers.use_windows_update`:
-  - `true` — usa o Windows Update como fonte de drivers
-  - `false` — depende de `PSWindowsUpdate` e configurações adicionais
-- `drivers.auto_reboot`:
-  - `true` — permite reinicializar automaticamente após atualização de drivers
-  - `false` — não reinicia o sistema automaticamente
-- `execution.continue_on_error`:
-  - `true` — continua executando mesmo se uma rotina falhar
-  - `false` — interrompe na primeira falha
-- `execution.generate_json_output`:
-  - `true` — habilita geração de saída em JSON
-  - `false` — não gera saída JSON
-- `execution.save_logs`:
-  - `true` — grava logs em disco
-  - `false` — não grava logs
+  "updates": {
+    "excluded_apps": ["Microsoft.Edge", "Git.Git"],  // IDs winget a ignorar
+    "include_unknown": true,
+    "auto_accept_agreements": true
+  },
 
-## Agendador do setup.ps1
+  "drivers": {
+    "update_drivers": true,
+    "auto_reboot": false     // nunca reinicia automaticamente
+  },
 
-O `setup/setup.ps1` cria uma tarefa agendada no Windows Task Scheduler para rodar a rotina completa automaticamente.
+  "system_repair": {
+    "enabled": true,
+    "run_dism": true,        // DISM /Online /Cleanup-Image /RestoreHealth
+    "run_sfc": true,         // sfc /scannow
+    "schedule_chkdsk": false,   // true = agenda chkdsk para próximo boot
+    "chkdsk_drives": ["C:"]
+  },
 
-- Tarefa criada em `\cleanup-dektop\`
-- Nome da tarefa: `PC Tools Maintenance`
-- Agendada para rodar semanalmente aos sábados às 10:00
-- Ação: executa `%LOCALAPPDATA%\\PCTools\\pc-tools.exe run-all`
-- Configurações principais:
-  - `StartWhenAvailable` — inicia a tarefa assim que possível caso tenha sido perdida
-  - `RestartCount 3` — reinicia até 3 vezes em caso de falha
-  - `RestartInterval 5 minutos` — intervalo entre tentativas de reinício
-- Executa com `Highest` privileges e com logon interativo do usuário atual
-- O script `setup.ps1` tenta elevar automaticamente para administrador antes de criar o instalador e a tarefa
+  "log_rotation": {
+    "enabled": true,
+    "keep_last_days": 30
+  },
 
-## Stack Tecnológica
+  "execution": {
+    "continue_on_error": true
+  }
+}
+```
+
+## Stack
 
 | Camada | Tecnologia |
 |---|---|
-| Automação / Scripts | PowerShell |
-| Empacotamento | ps2exe |
+| Scripts | PowerShell |
 | Atualização de apps | winget |
 | Atualização de drivers | PSWindowsUpdate |
+| Reparação do SO | DISM, SFC, chkdsk (nativos do Windows) |
