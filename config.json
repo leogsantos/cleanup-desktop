@@ -21,14 +21,28 @@
   },
 
   "drivers": {
-    "update_drivers": false,
+    "update_drivers": true,
     "use_windows_update": true,
     "auto_reboot": false
+  },
+
+  "system_repair": {
+    "enabled": true,
+    "run_dism": true,
+    "run_sfc": true,
+    "schedule_chkdsk": false,
+    "chkdsk_drives": ["C:"],
+    "auto_schedule_reboot": false
   },
 
   "execution": {
     "continue_on_error": true,
     "generate_json_output": true,
     "save_logs": true
+  },
+
+  "log_rotation": {
+    "enabled": true,
+    "keep_last_days": 30
   }
 }
